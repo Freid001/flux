@@ -1,0 +1,31 @@
+{
+  "type": "record",
+  "name": "aws_metric",
+  "namespace": "flux",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string"
+    },
+    {
+      "name": "label",
+      "type": "string"
+    },
+    {
+      "name": "dimension",
+      "type": "string"
+    },
+    {
+      "name": "timestamp",
+      "type": "string"
+    },
+    {
+      "name": "value",
+      "type": "double"
+    },
+    {
+      "name": "unit",
+      "type": "string"
+    }
+  ]
+}

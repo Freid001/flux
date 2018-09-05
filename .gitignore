@@ -1,0 +1,6 @@
+.gradle
+.idea
+.lein-env
+.lein-repl-history
+.nrepl-port
+full-stack
