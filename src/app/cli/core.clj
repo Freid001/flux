@@ -4,22 +4,28 @@
     [clojure.tools.cli :refer [parse-opts]]
     [clojure.string :as string]
     [clj-time.core :as time]
-    [clj-time.local :as local]
+    [clj-time.format :as format]
     [app.util.consumer :as consumer]
     [app.util.metric :as metric])
   (:gen-class))
 
-(def ecs (metric/->Ecs "aws_ecs_metrics" "aws_metric"))
-(def ec2 (metric/->Ec2 "aws_ec2_metrics" "aws_metric"))
-(def s3 (metric/->S3 "aws_s3_metrics" "aws_metric"))
-(def sqs (metric/->Sqs "aws_sqs_metrics" "aws_metric"))
+(def ecs (metric/->Ecs "aws_metric" "aws_metric"))
+(def ec2 (metric/->Ec2 "aws_metric" "aws_metric"))
+(def s3 (metric/->S3 "aws_metric" "aws_metric"))
+(def sqs (metric/->Sqs "aws_metric" "aws_metric"))
 
 (def cli-options
   "Command line interface options."
 
   [[nil "--namespace NAMESPACE" "The namespace of the metric."
     :default nil
-    :validate [#(contains? #{"AWS/ECS" "AWS/EC2" "AWS/S3" "AWS/SQS"} %) "Must be: AWS/ECS, AWS/EC2, AWS/S3 or AWS/SQS."]]
+    :validate [#(contains? #{"AWS/ECS" "AWS/EC2" "AWS/S3" "AWS/SQS"} %)
+               (string/join \newline
+                            ["Must be:"
+                             "\tAWS/ECS"
+                             "\tAWS/EC2"
+                             "\tAWS/S3"
+                             "\tAWS/SQS"])]]
 
    [nil "--metric METRIC" "The name of the metric."
     :default nil
@@ -45,26 +51,66 @@
                              "ApproximateNumberOfMessagesDelayed"
                              "NumberOfMessagesSent"
                              "ApproximateAgeOfOldestMessage"
-                             "NumberOfMessagesReceived"} %) "Must be: CPUUtilization, MemoryUtilization, SentMessageSize, NumberOfEmptyReceives, ApproximateNumberOfMessagesVisible, ApproximateNumberOfMessagesNotVisible, NumberOfMessagesDeleted, ApproximateNumberOfMessagesDelayed, NumberOfMessagesSent, ApproximateAgeOfOldestMessage or NumberOfMessagesReceived."]]
+                             "NumberOfMessagesReceived"} %)
+               (string/join \newline
+                            ["Must be:"
+                             "\tCPUUtilization"
+                             "\tMemoryUtilization"
+                             "\tDiskReadBytes"
+                             "\tDiskReadOps"
+                             "\tDiskWriteBytes"
+                             "\tDiskWriteOps"
+                             "\tEBSReadBytes"
+                             "\tEBSReadOps"
+                             "\tEBSWriteBytes"
+                             "\tEBSWriteOps"
+                             "\tNetworkIn"
+                             "\tNetworkOut"
+                             "\tBucketSizeBytes"
+                             "\tNumberOfObjects"
+                             "\tSentMessageSize"
+                             "\tNumberOfEmptyReceives"
+                             "\tApproximateNumberOfMessagesVisible"
+                             "\tApproximateNumberOfMessagesNotVisible"
+                             "\tNumberOfMessagesDeleted"
+                             "\tApproximateNumberOfMessagesDelayed"
+                             "\tNumberOfMessagesSent"
+                             "\tApproximateAgeOfOldestMessage"
+                             "\tNumberOfMessagesReceived"])]]
 
    [nil "--statistic STATISTIC" "The name of the statistic."
     :default "Average"
-    :validate [#(contains? #{"SampleCount" "Average" "Sum" "Minimum" "Maximum"} %) "Must be: SampleCount, Average, Sum, Minimum or Maximum."]]
+    :validate [#(contains? #{"SampleCount" "Average" "Sum" "Minimum" "Maximum"} %)
+               (string/join \newline
+                            ["Must be:"
+                             "\tSampleCount"
+                             "\tAverage"
+                             "\tSum"
+                             "\tMinimum"
+                             "\tMaximum"])]]
 
    [nil "--start-time TIME" "The time stamp that determines the first data point to return."
     :default (time/minus (time/now) (time/hours 1))
-    :validate [#() "Must be a valid datetime format."]]
+    :parse-fn #(try
+                 (format/parse (format/formatter :date-time-no-ms) %)
+                 (catch Exception e))
+    :validate [#(instance? org.joda.time.DateTime %) "Must be a valid datetime format."]]
 
    [nil "--end-time TIME" "The time stamp that determines the last data point to return."
     :default (time/now)
-    :validate [#(local/to-local-date-time %) "Must be a valid datetime format."]]
+    :parse-fn #(try
+                 (format/parse (format/formatter :date-time-no-ms) %)
+                 (catch Exception e))
+    :validate [#(instance? org.joda.time.DateTime %) "Must be a valid datetime format."]]
 
    [nil "--period SECONDS" "The granularity, in seconds, of the returned data points."
     :default 3600
-    :parse-fn #(Integer/parseInt %)
-    :validate [#(< 0 % 0x10000) "Must be a number between 0 and 65536"]]
+    :parse-fn #(try
+                 (Integer/parseInt %)
+                 (catch Exception e))
+    :validate [#(pos? %) "Must be a positive number."]]
 
-   ["-h" "--helpp" "List all commands and options."]])
+   ["-h" "--help" "List all commands and options."]])
 
 (defn- usage [options-summary]
   (string/join \newline ["Usage: flux action [options]"
@@ -95,7 +141,7 @@
 
   (let [{:keys [options arguments errors summary]} (parse-opts args cli-options)]
     (cond
-      (:helpp options)
+      (:help options)
       {:exit-message (usage summary) :ok? true}
 
       errors {:exit-message (error-msg errors)}
@@ -133,6 +179,6 @@
                     (exit 1 (error-msg ["--metric is required."])))
                   (exit 1 (error-msg ["--namespace is required."])))
 
-        "poll" (prn (get options :end-time)) ;(consumer/poll (fn [x] (prn x)))
+        "poll" (consumer/poll (fn [x] (prn x)))
 
         "default" nil))))

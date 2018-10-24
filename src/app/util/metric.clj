@@ -8,23 +8,17 @@
             [amazonica.aws.s3 :as s3]
             [amazonica.aws.sqs :as sqs]))
 
-(defn- retrieve [id namespace metric statistic dimensions start-time end-time period ]
-  (let [statistics (->
-                     {:namespace   namespace
-                      :metric-name metric
-                      :statistics  [statistic]}
-
-                     (assoc :dimensions (if (not-empty dimensions) dimensions []))
-                     (assoc :start-time (if (not-empty start-time) start-time (time/minus (time/now) (time/hours 1))))
-                     (assoc :end-time (if (not-empty end-time) end-time (time/now)))
-                     (assoc :period (if (not-empty period) period 3600))
-                     (cloudwatch/get-metric-statistics))]
-
-    (prn statistics)
+(defn- retrieve [id namespace metric statistic dimensions start-time end-time period]
+  (let [statistics (cloudwatch/get-metric-statistics {:namespace   namespace
+                                                      :metric-name metric
+                                                      :statistics  [statistic]
+                                                      :dimensions  dimensions
+                                                      :start-time  start-time
+                                                      :end-time    end-time
+                                                      :period      period})]
 
     (map (fn [metric] {:id        id
                        :label     statistic
-                       ;:dimensions dimensions
                        :timestamp (str (get metric :timestamp))
                        :value     (get metric (keyword (clojure.string/lower-case statistic)))
                        :unit      (get metric :unit)}) (get statistics :datapoints))))
@@ -48,29 +42,25 @@
                                start-time
                                end-time
                                period)]
-        (prn record)
-        ;(producer/write topic schema record)
-        ))))
+        (producer/write topic schema record)))))
 
-  (defrecord Ec2 [topic schema]
-    Metric
+(defrecord Ec2 [topic schema]
+  Metric
 
-    (namespace [this] "AWS/EC2")
+  (namespace [this] "AWS/EC2")
 
-    (fetch [this metric statistic start-time end-time period]
-      (doseq [group (get (ec2/describe-instances) :reservations)]
-        (doseq [instance (get group :instances)]
-          (doseq [record (retrieve (get instance :instance-id)
-                                   (namespace this)
-                                   metric
-                                   statistic
-                                   [{:name "InstanceId" :value (get instance :instance-id)}]
-                                   start-time
-                                   end-time
-                                   period)]
-            (prn record)
-            ;(producer/write topic schema record)
-            )))))
+  (fetch [this metric statistic start-time end-time period]
+    (doseq [group (get (ec2/describe-instances) :reservations)]
+      (doseq [instance (get group :instances)]
+        (doseq [record (retrieve (get instance :instance-id)
+                                 (namespace this)
+                                 metric
+                                 statistic
+                                 [{:name "InstanceId" :value (get instance :instance-id)}]
+                                 start-time
+                                 end-time
+                                 period)]
+          (producer/write topic schema record))))))
 
 (defrecord S3 [topic schema]
   Metric
@@ -79,20 +69,14 @@
 
   (fetch [this metric statistic start-time end-time period]
     (doseq [bucket (s3/list-buckets)]
-      (prn (retrieve (get bucket :name)
+      (producer/write topic schema (retrieve (get bucket :name)
                      (namespace this)
                      metric
                      statistic
                      [{:name "BucketName" :value (get bucket :name)} {:name "StorageType" :value "StandardStorage"}]
                      start-time
                      end-time
-                     period))
-
-
-      ;(doseq [record (retrieve (last (string/split queue #"/")) "QueueName" (namespace this) metric statistic)]
-      ;  (producer/write topic schema record))
-
-      )))
+                     period)))))
 
 (defrecord Sqs [topic schema]
   Metric
@@ -110,23 +94,3 @@
                                end-time
                                period)]
         (producer/write topic schema record)))))
-
-
-;aws cloudwatch get-metric-statistics \
-;--metric-name BucketSizeBytes \
-;--namespace "AWS/S3" \
-;--dimensions Name=BucketName,Value=aws-logs-669858054894-us-east-1 Name=StorageType,Value=StandardStorage \
-;--start-time 2018-08-31T12:00:00Z \
-;--end-time 2018-08-31T13:00:00Z \
-;--statistics Average \
-;--period 3600
-;Name=StorageType,Value=StandardStorage \
-
-;aws cloudwatch get-metric-statistics \
-;--metric-name BucketSizeBytes \
-;--namespace "AWS/S3" \
-;--start-time 2018-09-03T13:00:00Z \
-;--end-time 2018-09-05T13:05:00Z \
-;--statistics "Average" \
-;--dimensions Name=BucketName,Value=aws-logs-669858054894-us-east-1 Name=StorageType,Value=StandardStorage \
-;--period 300

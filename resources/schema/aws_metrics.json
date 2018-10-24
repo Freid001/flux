@@ -12,10 +12,6 @@
       "type": "string"
     },
     {
-      "name": "dimension",
-      "type": "string"
-    },
-    {
       "name": "timestamp",
       "type": "string"
     },

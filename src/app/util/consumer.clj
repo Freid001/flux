@@ -16,7 +16,7 @@
 
 (def ^:private c-cfg
   {"bootstrap.servers"  "kafka1:9092"
-   "group.id"           "consumer2"
+   "group.id"           "consumer"
    "auto.offset.reset"  "earliest"
    "enable.auto.commit" "true"
    "key.deserializer"   ByteArrayDeserializer
@@ -24,7 +24,7 @@
 
 (def ^:private get-schema-by-id-memo (memoize reg/get-avro-schema-by-id))
 (def ^:private schema-registry (reg/->schema-registry-client {:base-url "http://localhost:8081"}))
-(def ^:private consumer (doto (KafkaConsumer. c-cfg) (.subscribe ["avro-java"])))
+(def ^:private consumer (doto (KafkaConsumer. c-cfg) (.subscribe ["aws_metric"])))
 
 (defn- byte-buffer->bytes
   [buffer]
@@ -37,15 +37,13 @@
   "Read Kafka record."
   [record]
 
-  (try
-    (let [buffer (ByteBuffer/wrap record)
-          schema (get-schema-by-id-memo schema-registry (.getInt buffer))]
-
+  (let [buffer (ByteBuffer/wrap record)]
       (if (= magic/magic (.get buffer))
-        (avro/decode schema (byte-array (byte-buffer->bytes buffer)))
-        (throw (Exception. "Invalid magic byte!"))))
+        (let [schema-id (.getInt buffer)
+              schema (get-schema-by-id-memo schema-registry schema-id)]
 
-    (catch Exception e (logger/log :error e) nil)))
+          (avro/decode schema (byte-array (byte-buffer->bytes buffer))))
+        (throw (Exception. "Found different magic byte!")))))
 
 (defn poll
   "Poll Kafka topic."
@@ -55,4 +53,6 @@
     (while true
       (let [records (.poll consumer 100)]
         (doseq [record records]
-          (fn (read-record (.value record))))))))
+          (try
+            (fn (read-record (.value record)))
+            (catch Exception e (logger/log :error e))))))))
